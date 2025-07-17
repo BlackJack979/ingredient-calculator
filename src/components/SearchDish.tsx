@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +11,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { dishAPI } from "@/api/dishes";
 import { DishWithIngredients, ScaledIngredient } from "@/types/database";
-import { Search, Edit, Calculator } from "lucide-react";
+import { Search, Edit, Calculator, ChevronDown } from "lucide-react";
 import EditDish from "./EditDish";
 
 interface SearchDishProps {
@@ -23,7 +36,10 @@ interface SearchDishProps {
 
 export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<DishWithIngredients[]>([]);
+  const [allDishes, setAllDishes] = useState<DishWithIngredients[]>([]);
+  const [filteredDishes, setFilteredDishes] = useState<DishWithIngredients[]>(
+    [],
+  );
   const [selectedDish, setSelectedDish] = useState<DishWithIngredients | null>(
     null,
   );
@@ -31,49 +47,65 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
   const [scaledIngredients, setScaledIngredients] = useState<
     ScaledIngredient[]
   >([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [open, setOpen] = useState(false);
   const { toast } = useToast();
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!searchTerm.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a dish name to search.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSearching(true);
-    try {
-      const results = await dishAPI.searchDishes(searchTerm.trim());
-      setSearchResults(results);
-
-      if (results.length === 0) {
+  // Load all dishes on component mount
+  useEffect(() => {
+    const loadAllDishes = async () => {
+      setIsLoading(true);
+      try {
+        // Search with empty string to get all dishes
+        const dishes = await dishAPI.searchDishes("");
+        setAllDishes(dishes);
+        setFilteredDishes(dishes);
+      } catch (error) {
+        console.error("Error loading dishes:", error);
         toast({
-          title: "No Results",
-          description: "No dishes found matching your search.",
+          title: "Error",
+          description: "Failed to load dishes. Please try again.",
+          variant: "destructive",
         });
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Error searching dishes:", error);
-      toast({
-        title: "Error",
-        description: "Failed to search dishes. Please try again.",
-        variant: "destructive",
+    };
+
+    loadAllDishes();
+  }, [toast]);
+
+  // Filter dishes based on search term
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredDishes(allDishes);
+    } else {
+      const searchLower = searchTerm.toLowerCase();
+      const filtered = allDishes.filter((dish) =>
+        dish.name.toLowerCase().includes(searchLower),
+      );
+
+      // Sort so that dishes starting with the search term appear first
+      const sorted = filtered.sort((a, b) => {
+        const aStartsWith = a.name.toLowerCase().startsWith(searchLower);
+        const bStartsWith = b.name.toLowerCase().startsWith(searchLower);
+
+        if (aStartsWith && !bStartsWith) return -1;
+        if (!aStartsWith && bStartsWith) return 1;
+        return a.name.localeCompare(b.name);
       });
-    } finally {
-      setIsSearching(false);
+
+      setFilteredDishes(sorted);
     }
-  };
+  }, [searchTerm, allDishes]);
 
   const selectDish = (dish: DishWithIngredients) => {
     setSelectedDish(dish);
     setTargetServings("");
     setScaledIngredients([]);
+    setSearchTerm(dish.name);
+    setOpen(false);
   };
 
   const calculateIngredients = () => {
@@ -109,8 +141,8 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
     setSelectedDish(updatedDish);
     setIsEditing(false);
 
-    // Update search results if the dish is in the current results
-    setSearchResults((prev) =>
+    // Update all dishes if the dish is in the current results
+    setAllDishes((prev) =>
       prev.map((dish) => (dish.id === updatedDish.id ? updatedDish : dish)),
     );
 
@@ -148,66 +180,77 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSearch} className="flex gap-4">
-              <div className="flex-1">
-                <Input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Enter dish name to search..."
-                />
-              </div>
-              <Button type="submit" disabled={isSearching}>
-                <Search className="h-4 w-4 mr-2" />
-                {isSearching ? "Searching..." : "Search"}
-              </Button>
-            </form>
+            <div className="space-y-4">
+              <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-full justify-between"
+                  >
+                    {selectedDish ? selectedDish.name : "Select a dish..."}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput
+                      placeholder="Search dishes..."
+                      value={searchTerm}
+                      onValueChange={setSearchTerm}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {isLoading ? "Loading dishes..." : "No dishes found."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {filteredDishes.map((dish) => (
+                          <CommandItem
+                            key={dish.id}
+                            value={dish.name}
+                            onSelect={() => selectDish(dish)}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium">{dish.name}</span>
+                              <span className="text-sm text-muted-foreground">
+                                {dish.base_servings} servings •{" "}
+                                {dish.ingredients.length} ingredients
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Search Results */}
-        {searchResults.length > 0 && (
+        {/* Selected Dish Info */}
+        {selectedDish && (
           <Card>
             <CardHeader>
-              <CardTitle>Search Results</CardTitle>
+              <CardTitle className="flex justify-between items-center">
+                <span>Selected Dish: {selectedDish.name}</span>
+                <Button
+                  onClick={() => setIsEditing(true)}
+                  variant="outline"
+                  size="sm"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {searchResults.map((dish) => (
-                  <div
-                    key={dish.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedDish?.id === dish.id
-                        ? "border-primary bg-primary/5"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    onClick={() => selectDish(dish)}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold">{dish.name}</h3>
-                        <p className="text-sm text-gray-600">
-                          Base servings: {dish.base_servings} | Ingredients:{" "}
-                          {dish.ingredients.length}
-                        </p>
-                      </div>
-                      {selectedDish?.id === dish.id && (
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsEditing(true);
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <p className="text-sm text-gray-600">
+                Base servings: {selectedDish.base_servings} | Ingredients:{" "}
+                {selectedDish.ingredients.length}
+              </p>
             </CardContent>
           </Card>
         )}
