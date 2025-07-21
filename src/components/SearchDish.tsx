@@ -24,10 +24,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { dishAPI } from "@/api/dishes";
 import { DishWithIngredients, ScaledIngredient } from "@/types/database";
-import { Search, Edit, Calculator, ChevronDown } from "lucide-react";
+import { Search, Edit, Calculator, ChevronDown, Lock } from "lucide-react";
 import EditDish from "./EditDish";
 
 interface SearchDishProps {
@@ -50,6 +58,8 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [open, setOpen] = useState(false);
+  const [showSecurityDialog, setShowSecurityDialog] = useState(false);
+  const [securityCode, setSecurityCode] = useState("");
   const { toast } = useToast();
 
   // Load all dishes on component mount
@@ -135,6 +145,31 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
     );
 
     setScaledIngredients(scaled);
+  };
+
+  const handleEditClick = () => {
+    setShowSecurityDialog(true);
+    setSecurityCode("");
+  };
+
+  const handleSecuritySubmit = () => {
+    if (securityCode === "1618") {
+      setShowSecurityDialog(false);
+      setIsEditing(true);
+      setSecurityCode("");
+    } else {
+      toast({
+        title: "Access Denied",
+        description: "Invalid security code. Please try again.",
+        variant: "destructive",
+      });
+      setSecurityCode("");
+    }
+  };
+
+  const handleSecurityCancel = () => {
+    setShowSecurityDialog(false);
+    setSecurityCode("");
   };
 
   const handleEditComplete = (updatedDish: DishWithIngredients) => {
@@ -236,11 +271,7 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
             <CardHeader>
               <CardTitle className="flex justify-between items-center">
                 <span>Selected Dish: {selectedDish.name}</span>
-                <Button
-                  onClick={() => setIsEditing(true)}
-                  variant="outline"
-                  size="sm"
-                >
+                <Button onClick={handleEditClick} variant="outline" size="sm">
                   <Edit className="h-4 w-4 mr-2" />
                   Edit
                 </Button>
@@ -312,6 +343,48 @@ export default function SearchDish({ onDishUpdated }: SearchDishProps = {}) {
             </CardContent>
           </Card>
         )}
+
+        {/* Security Code Dialog */}
+        <Dialog open={showSecurityDialog} onOpenChange={setShowSecurityDialog}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Security Verification
+              </DialogTitle>
+              <DialogDescription>
+                Please enter the security code to edit this dish.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="security-code" className="text-right">
+                  Code
+                </Label>
+                <Input
+                  id="security-code"
+                  type="password"
+                  value={securityCode}
+                  onChange={(e) => setSecurityCode(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Enter security code"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSecuritySubmit();
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleSecurityCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleSecuritySubmit}>Verify</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
